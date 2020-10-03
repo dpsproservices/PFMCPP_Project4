@@ -118,13 +118,11 @@ struct Numeric
     Numeric(Numeric&& other) // #5
     {
         value = std::move(other.value);
-        other.value = nullptr;
     }
 
     Numeric& operator= (Numeric&& other) // #5
     {
         value = std::move(other.value);
-        other.value = nullptr;
         return *this;
     } 
 

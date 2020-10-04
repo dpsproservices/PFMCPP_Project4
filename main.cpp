@@ -12,7 +12,7 @@ Create a branch named Part9
  
  2) add these macros after the JUCE_LEAK_DETECTOR macro :
  */
-
+/*
 #define JUCE_DECLARE_NON_COPYABLE(className) \
             className (const className&) = delete;\
             className& operator= (const className&) = delete;
@@ -20,7 +20,7 @@ Create a branch named Part9
 #define JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(className) \
             JUCE_DECLARE_NON_COPYABLE(className) \
             JUCE_LEAK_DETECTOR(className)
-
+*/
 /*
  3) add JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Temporary) to the end of the  Temporary<> struct
  
@@ -69,12 +69,12 @@ i cubed: 531441
 Use a service like https://www.diffchecker.com/diff to compare your output. 
 */
 
-
 #include <iostream>
 #include <typeinfo>
 #include <cmath>
 #include <functional>
 #include <memory>
+#include "LeakedObjectDetector.h"
 
 template<typename NumericType>
 struct Temporary
@@ -85,32 +85,48 @@ struct Temporary
                   << counter++ << std::endl;
     }
 
-    /*
-     revise these conversion functions to read/write to 'v' here
-     hint: what qualifier do read-only functions usually have?
-     */
-    operator NumericType() const { /* read-only function */ return v; }
-    operator NumericType&() { /* read/write function */ return v; }
+    Temporary(Temporary&& other) : v(std::move(other.v)) { } // #5
+
+    Temporary& operator=(Temporary&& other) // #5
+    {
+        v = std::move(other.v); 
+        return *this;       
+    }
+
+    ~Temporary() = default; // #5
+
+    operator NumericType() const { return v; }
+    operator NumericType&() { return v; }
 
 private:
     static int counter;
     NumericType v;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Temporary) // #3
 };
 
 template<typename NumericType>
-int Temporary<NumericType>::counter { 0 };
+int Temporary<NumericType>::counter = 0;
 
 template<typename NumericType>
 struct Numeric
-{    
+{
     using Type = Temporary<NumericType>;
+    
+    Numeric(NumericType t) : value( std::make_unique<Type>(t) ) { } // #5
 
-    Numeric(Type t) : value( std::make_unique<Type>(t) ) { }
-
-    ~Numeric() 
+    Numeric(Numeric&& other) // #5
     {
-        value = nullptr;
+        value = std::move(other.value);
     }
+
+    Numeric& operator= (Numeric&& other) // #5
+    {
+        value = std::move(other.value);
+        return *this;
+    } 
+
+    ~Numeric() = default; // #5
 
     operator Type() const { return *value; }
 
@@ -125,28 +141,28 @@ struct Numeric
     }
 
     template<typename OtherType>
-    Numeric& operator+=(const OtherType& o) // #3
+    Numeric& operator+=(const OtherType& o)
     {
         *value += static_cast<NumericType>(o);
         return *this;
     }
 
     template<typename OtherType>
-    Numeric& operator-=(const OtherType& o) // #3
+    Numeric& operator-=(const OtherType& o)
     { 
         *value -= static_cast<NumericType>(o); 
         return *this; 
     }
 
     template<typename OtherType>
-    Numeric& operator*=(const OtherType& o) // #3
+    Numeric& operator*=(const OtherType& o)
     {
         *value *= static_cast<NumericType>(o);
         return *this;
     }
 
     template<typename OtherType> 
-    Numeric& operator/=(const OtherType& otherType) // #3
+    Numeric& operator/=(const OtherType& otherType)
     {
         // template type is int
         if constexpr (std::is_same<NumericType,int>::value)
@@ -179,14 +195,14 @@ struct Numeric
     }
 
     template<typename OtherType>
-    Numeric& pow(const OtherType& o) // #5
+    Numeric& pow(const OtherType& o)
     {
         *value = static_cast<Type>( std::pow(*value,static_cast<NumericType>(o)) );
         return *this;
     }
 
     template<typename Callable>
-    Numeric& apply( Callable callable) //  #4
+    Numeric& apply( Callable callable)
     {
         callable(value);
         return *this; 
@@ -194,10 +210,12 @@ struct Numeric
 
 private:
     std::unique_ptr<Type> value;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Numeric) // #4
 };
 
 template<typename Type> 
-void cube( std::unique_ptr<Type>& value) // #7
+void cube( std::unique_ptr<Type>& value)
 {
     auto& v = *value;
     v = v * v * v;
@@ -234,7 +252,6 @@ private:
     float x{0}, y{0};
 };
 
-// #7
 int main()
 {
     Numeric<float> f(0.1f);
